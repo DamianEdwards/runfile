@@ -10,12 +10,20 @@ BenchmarkRunner.Run<Benchmarks>();
 [MemoryDiagnoser]
 public class Benchmarks
 {
-    private readonly FileInfo SmallFile = new("D:\\src\\GitHub\\DamianEdwards\\RazorSlices\\samples\\RazorSlices.Samples.WebApp\\Slices\\Lorem\\LoremInjectableProperties.cshtml");
-    private readonly FileInfo LargeFile = new("D:\\src\\GitHub\\DamianEdwards\\RazorSlices\\samples\\RazorSlices.Samples.WebApp\\Slices\\Lorem\\LoremStatic.cshtml");
+    private readonly FileInfo SmallFile = new("hello.cs");
+    private readonly FileInfo MediumFile = new("The Tell-Tale Heart.txt");
+    private readonly FileInfo LargeFile = new("Pride and Prejudice.txt");
+    private readonly FileInfo ExtraLargeFile = new("War and Peace.txt");
 
     [Benchmark]
     public long PrintFileSmall() => FileHelpers.PrintFile(SmallFile);
 
     [Benchmark]
+    public long PrintFileMedium() => FileHelpers.PrintFile(MediumFile);
+
+    [Benchmark]
     public long PrintFileLarge() => FileHelpers.PrintFile(LargeFile);
+
+    [Benchmark]
+    public long PrintFileExtraLarge() => FileHelpers.PrintFile(ExtraLargeFile);
 }
