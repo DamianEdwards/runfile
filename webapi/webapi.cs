@@ -1,6 +1,7 @@
-#!/usr/bin/cs run
-#sdk Microsoft.NET.Sdk.Web
-#package Microsoft.AspNetCore.OpenApi 9.0.2
+#!/usr/bin/env cs
+
+#:sdk Microsoft.NET.Sdk.Web
+#:package Microsoft.AspNetCore.OpenApi/9.0.2
 
 var builder = WebApplication.CreateBuilder(args);
 

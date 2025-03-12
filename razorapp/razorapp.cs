@@ -1,5 +1,6 @@
 #!/usr/bin/cs run
-#sdk Microsoft.NET.Sdk.Web
+
+#:sdk Microsoft.NET.Sdk.Web
 
 var builder = WebApplication.CreateBuilder(args);
 

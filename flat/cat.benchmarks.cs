@@ -1,6 +1,6 @@
 #!/usr/bin/dotnet run
 
-#package BenchmarkDotNet 0.14.0
+#:package BenchmarkDotNet/0.14.0
 
 using BenchmarkDotNet.Attributes;
 using BenchmarkDotNet.Running;
