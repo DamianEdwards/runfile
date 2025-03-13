@@ -1,4 +1,4 @@
-#!/usr/bin/dotnet run
+//#!/usr/bin/dotnet run
 
 new Game().Run();
 
@@ -16,6 +16,8 @@ class Game
 
     public Game(int width = 40, int height = 20)
     {
+        Console.Clear();
+
         this.width = width;
         this.height = height;
         // Initialize player at bottom center.
