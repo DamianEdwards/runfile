@@ -7,7 +7,10 @@ var builder = DistributedApplication.CreateBuilder(args);
 
 var redis = builder.AddRedis("redis");
 
-builder.AddDotnetApp("../webapi/webapi.cs")
+var webapi = builder.AddDotnetApp("../webapi/webapi.cs")
     .WithReference(redis).WaitFor(redis);
+
+builder.AddDotnetApp("../razorapp/razorapp.cs")
+    .WithReference(webapi).WaitFor(webapi);
 
 builder.Build.Run();
