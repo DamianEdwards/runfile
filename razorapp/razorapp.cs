@@ -1,13 +1,13 @@
 #!/usr/bin/dotnet run
 
 #:sdk Microsoft.NET.Sdk.Web
-#:package Microsoft.AspNetCore.Components.Web/9.0.2
+#:package Microsoft.AspNetCore.Components.Web 10.0.0-*
 
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddRazorComponents();
 
-var app = builder.Builder();
+var app = builder.Build();
 
 app.UseHttpsRedirection();
 app.UseAntiforgery();
