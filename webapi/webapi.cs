@@ -1,4 +1,4 @@
-#!/usr/bin/env cs
+#!/usr/bin/env dotnet run
 
 #:sdk Microsoft.NET.Sdk.Web
 #:package Microsoft.AspNetCore.OpenApi 10.0.0-*
