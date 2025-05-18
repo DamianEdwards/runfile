@@ -1,7 +1,7 @@
 #!/usr/bin/env dotnet run
 
 #:sdk Microsoft.NET.Sdk.Web
-#:package Microsoft.AspNetCore.OpenApi 10.0.0-*
+#:package Microsoft.AspNetCore.OpenApi@10.0.0-preview.4.*
 
 var builder = WebApplication.CreateBuilder(args);
 

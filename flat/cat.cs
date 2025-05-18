@@ -1,6 +1,6 @@
 #!/usr/bin/dotnet run
 
-#:package System.CommandLine/2.0.0-*
+#:package System.CommandLine@2.0.0-*
 #:property LangVersion=preview
 
 using System.CommandLine;

@@ -1,7 +1,7 @@
 #!/usr/bin/dotnet run
 
 #:sdk Microsoft.NET.Sdk.Web
-#:package Microsoft.AspNetCore.Components.Web 10.0.0-*
+#:package Microsoft.AspNetCore.Components.Web@10.0.0-*
 
 var builder = WebApplication.CreateBuilder(args);
 
