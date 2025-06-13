@@ -1,0 +1,4 @@
+{
+    "name": ".net 10 dev container",
+    "image": "mcr.microsoft.com/dotnet/sdk:10.0-preview"
+}
