@@ -1,7 +1,6 @@
 #!/usr/bin/dotnet run
 #:package Microsoft.NET.Test.Sdk@17.*
 #:package TUnit.Playwright@0.*
-#:property ImplicitUsings true
 
 using TUnit.Playwright;
 using System.Diagnostics;
