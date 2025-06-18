@@ -1,4 +1,4 @@
-#:property DefineConstants $(DefineConstants);CUSTOM_CONSTANT;$(EnvVarConstant)
+#:property DefineConstants=$(DefineConstants);CUSTOM_CONSTANT;$(EnvVarConstant)
 
 #if DEBUG
 Console.WriteLine("Hello from Debug!");

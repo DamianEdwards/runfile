@@ -1,4 +1,4 @@
-#!/usr/bin/dotnet run
+#!/usr/bin/env dotnet
 
 #:sdk Microsoft.NET.Sdk.Web
 #:package Microsoft.AspNetCore.Components.Web@10.0.0-*

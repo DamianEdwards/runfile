@@ -1,4 +1,4 @@
-#!/usr/bin/dotnet run
+#!/usr/bin/env dotnet
 
 #:sdk Microsoft.NET.Sdk
 #:sdk Aspire.Hosting.Sdk 9.3.0

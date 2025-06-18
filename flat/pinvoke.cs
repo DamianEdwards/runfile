@@ -1,4 +1,4 @@
-#:property AllowUnsafeBlocks True
+#:property AllowUnsafeBlocks=True
 
 using System.Reflection;
 using System.Runtime.InteropServices;

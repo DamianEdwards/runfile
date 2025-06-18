@@ -1,16 +1,30 @@
-#:property LangVersion preview
+#:property LangVersion=preview
 
-Console.WriteLine($"Script path: {Path.ScriptPath()}");
-Console.WriteLine($"Script directory: {Path.ScriptDirectory()}");
+Console.WriteLine("From [CallerFilePath] attribute:");
+Console.WriteLine($" - Entry-point path: {Path.EntryPointFilePath()}");
+Console.WriteLine($" - Entry-point directory: {Path.EntryPointFileDirectoryPath()}");
 
-public static class PathExtensions
+Console.WriteLine("From AppContext data:");
+Console.WriteLine($" - Entry-point path (AppContext): {AppContext.EntryPointFilePath()}");
+Console.WriteLine($" - Entry-point directory (AppContext): {AppContext.EntryPointFileDirectoryPath()}");
+
+static class PathEntryPointExtensions
 {
     extension(Path)
     {
-        public static string ScriptPath() => ScriptPathImpl();
+        public static string EntryPointFilePath() => EntryPointImpl();
 
-        public static string ScriptDirectory() => Path.GetDirectoryName(ScriptPathImpl()) ?? "";
+        public static string EntryPointFileDirectoryPath() => Path.GetDirectoryName(EntryPointImpl()) ?? "";
 
-        private static string ScriptPathImpl([System.Runtime.CompilerServices.CallerFilePath] string filePath = "") => filePath;
+        private static string EntryPointImpl([System.Runtime.CompilerServices.CallerFilePath] string filePath = "") => filePath;
+    }
+}
+
+static class AppContextExtensions
+{
+    extension(AppContext)
+    {
+        public static string? EntryPointFilePath() => AppContext.GetData("EntryPointFilePath") as string;
+        public static string? EntryPointFileDirectoryPath() => AppContext.GetData("EntryPointFileDirectoryPath") as string;
     }
 }
