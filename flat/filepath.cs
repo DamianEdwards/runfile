@@ -1,3 +1,4 @@
+#!/usr/bin/env dotnet
 #:property LangVersion=preview
 
 Console.WriteLine("From [CallerFilePath] attribute:");

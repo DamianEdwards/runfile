@@ -1,3 +1,4 @@
+#!/usr/bin/env dotnet
 #:property AllowUnsafeBlocks=True
 
 using System.Reflection;

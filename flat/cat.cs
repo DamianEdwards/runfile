@@ -1,5 +1,4 @@
 #!/usr/bin/env dotnet
-
 #:package System.CommandLine@2.0.0-*
 #:property LangVersion=preview
 

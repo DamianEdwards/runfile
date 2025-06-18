@@ -1,3 +1,4 @@
+#!/usr/bin/env dotnet
 #:property DefineConstants=$(DefineConstants);CUSTOM_CONSTANT;$(EnvVarConstant)
 
 #if DEBUG
