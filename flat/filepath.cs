@@ -6,8 +6,8 @@ Console.WriteLine($" - Entry-point path: {Path.EntryPointFilePath()}");
 Console.WriteLine($" - Entry-point directory: {Path.EntryPointFileDirectoryPath()}");
 
 Console.WriteLine("From AppContext data:");
-Console.WriteLine($" - Entry-point path (AppContext): {AppContext.EntryPointFilePath()}");
-Console.WriteLine($" - Entry-point directory (AppContext): {AppContext.EntryPointFileDirectoryPath()}");
+Console.WriteLine($" - Entry-point path: {AppContext.EntryPointFilePath()}");
+Console.WriteLine($" - Entry-point directory: {AppContext.EntryPointFileDirectoryPath()}");
 
 static class PathEntryPointExtensions
 {
