@@ -1,5 +1,4 @@
 #!/usr/bin/dotnet run
-#:package coverlet.collector@3.*
 #:package Microsoft.NET.Test.Sdk@17.*
 #:package xunit.v3@2.*
 #:package xunit.runner.visualstudio@3.*
