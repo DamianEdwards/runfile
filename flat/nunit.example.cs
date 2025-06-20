@@ -6,7 +6,6 @@
 #:package NUnit3TestAdapter@5.*
 #:property EnableNUnitRunner true
 #:property TestingPlatformDotnetTestSupport true
-#:property OutputType Exe
 
 using NUnit.Framework;
 

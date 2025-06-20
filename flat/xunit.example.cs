@@ -4,7 +4,6 @@
 #:package xunit.runner.visualstudio@3.*
 #:property TestingPlatformDotnetTestSupport true
 #:property UseMicrosoftTestingPlatformRunner true
-#:property OutputType Exe
 
 using Xunit;
 

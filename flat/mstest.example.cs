@@ -3,7 +3,7 @@
 #:package MSTest@3.*
 #:property EnableMSTestRunner true
 #:property TestingPlatformDotnetTestSupport true
-#:property OutputType exe 
+ 
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 [TestClass]
 public sealed class Test1
