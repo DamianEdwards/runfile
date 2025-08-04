@@ -5,7 +5,7 @@
         "commandName": "Project",
         "dotnetRunMessages": true,
         "launchBrowser": true,
-        "applicationUrl": "http://localhost:5149",
+        "applicationUrl": "http://razorapp.dev.localhost:5149",
         "environmentVariables": {
           "ASPNETCORE_ENVIRONMENT": "Development"
         }
@@ -14,7 +14,7 @@
         "commandName": "Project",
         "dotnetRunMessages": true,
         "launchBrowser": true,
-        "applicationUrl": "https://localhost:7293;http://localhost:5149",
+        "applicationUrl": "https://razorapp.dev.localhost:7293;http://razorapp.dev.localhost:5149",
         "environmentVariables": {
           "ASPNETCORE_ENVIRONMENT": "Development"
         }
