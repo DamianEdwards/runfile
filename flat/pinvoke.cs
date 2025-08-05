@@ -1,4 +1,5 @@
-#:property AllowUnsafeBlocks True
+#!/usr/bin/env dotnet
+#:property AllowUnsafeBlocks=True
 
 using System.Reflection;
 using System.Runtime.InteropServices;

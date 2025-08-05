@@ -1,4 +1,4 @@
-#!/usr/bin/dotnet run
+#!/usr/bin/env dotnet
 
 #:package Humanizer@2.14.1
 

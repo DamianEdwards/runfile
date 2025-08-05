@@ -1,7 +1,0 @@
-<Project>
-
-  <ItemGroup>
-    <ProjectReference Include="../ClassLib/ClassLib.csproj" />
-  </ItemGroup>
-
-</Project>

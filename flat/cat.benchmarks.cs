@@ -1,4 +1,4 @@
-#!/usr/bin/dotnet run
+#!/usr/bin/env dotnet
 
 #:package BenchmarkDotNet@0.14.0
 

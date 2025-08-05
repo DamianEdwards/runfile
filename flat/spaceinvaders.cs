@@ -1,4 +1,4 @@
-#!/usr/bin/dotnet run
+#!/usr/bin/env dotnet
 
 new Game().Run();
 

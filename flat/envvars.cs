@@ -1,4 +1,5 @@
-#:property DefineConstants $(DefineConstants);CUSTOM_CONSTANT;$(EnvVarConstant)
+#!/usr/bin/env dotnet
+#:property DefineConstants=$(DefineConstants);CUSTOM_CONSTANT;$(EnvVarConstant)
 
 #if DEBUG
 Console.WriteLine("Hello from Debug!");
