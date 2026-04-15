@@ -3,7 +3,7 @@
   "profiles": {
     "default": {
       "commandName": "Project",
-      "dotnetRunMessages": true
+      "dotnetRunMessages": false
     },
     "verify": {
       "commandName": "Project",

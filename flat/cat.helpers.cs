@@ -1,0 +1,34 @@
+namespace CatCli;
+
+internal static class FileHelpers
+{
+    public static long PrintFile(FileInfo file, CancellationToken cancellationToken)
+    {
+        Span<char> buffer = stackalloc char[256];
+
+        using var readStream = File.OpenRead(file.FullName);
+        using var reader = new StreamReader(readStream);
+        long linesRead = 0;
+
+        while (!reader.EndOfStream)
+        {
+            var charsRead = reader.ReadBlock(buffer);
+            char? lastChar = null;
+
+            for (var i = 0; i < charsRead; i++)
+            {
+                var c = buffer[i];
+                Console.Write(c);
+
+                if (c == '\n' && (Environment.NewLine == "\n" || lastChar == '\r'))
+                {
+                    linesRead++;
+                }
+
+                lastChar = c;
+            }
+        }
+
+        return linesRead;
+    }
+}

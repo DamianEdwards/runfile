@@ -1,74 +1,16 @@
 #!/usr/bin/env dotnet
-#:package System.CommandLine@2.0.0
 
-using System.CommandLine;
-using System.IO;
+// Properties to enable experimental features for file-based apps
+// - include/exclude directives moving to non-experimental in 10.0.300
+// - transitive directives experimental status still being debated for 10.0.300
+#:property ExperimentalFileBasedProgramEnableIncludeDirective=true
+#:property ExperimentalFileBasedProgramEnableExcludeDirective=true
+#:property ExperimentalFileBasedProgramEnableTransitiveDirectives=true
 
-var fileArg = new Argument<FileInfo>(name: "file")
-{
-    Description = "The file to read and display on the console.",
-    Arity = ArgumentArity.ExactlyOne
-};
-fileArg.AcceptExistingOnly();
+// Include other files in the virtual project, item type is inferred from the file extension
+// Note: Using globs here is supported but effectively disables MSBuild caching atm
+#:include ./cat.commands.cs
 
-var rootCommand = new RootCommand("C# implementation of the Unix 'cat' command")
-{
-    fileArg
-};
-
-rootCommand.SetAction((parseResult, ct) =>
-{
-    var result = 0;
-    var fileInfo = parseResult.GetValue(fileArg);
-
-    if (fileInfo?.Exists != true)
-    {
-        var color = Console.ForegroundColor;
-        Console.ForegroundColor = ConsoleColor.Red;
-        Console.WriteLine("File not found or no file specified.");
-        Console.ForegroundColor = color;
-        result = 1;
-    }
-    else
-    {
-        var linesRead = FileHelpers.PrintFile(fileInfo, ct);
-    }
-
-    return Task.FromResult(result);
-});
-
+var rootCommand = CatCli.Commands.DefineRootCommand();
 var parseResult = rootCommand.Parse(args);
 return await parseResult.InvokeAsync();
-
-public static class FileHelpers
-{
-    public static long PrintFile(FileInfo file, CancellationToken cancellationToken)
-    {
-        Span<char> buffer = stackalloc char[256];
-
-        using var readStream = File.OpenRead(file.FullName);
-        using var reader = new StreamReader(readStream);
-        long linesRead = 0;
-
-        while (!reader.EndOfStream)
-        {
-            var charsRead = reader.ReadBlock(buffer);
-            char? lastChar = null;
-
-            for (var i = 0; i < charsRead; i++)
-            {
-                var c = buffer[i];
-                Console.Write(c);
-
-                if (c == '\n' && (Environment.NewLine == "\n" || lastChar == '\r'))
-                {
-                    linesRead++;
-                }
-
-                lastChar = c;
-            }
-        }
-
-        return linesRead;
-    }
-}
