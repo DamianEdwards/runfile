@@ -454,6 +454,13 @@ async Task<VerificationResult> VerifyFile(string filePath, int timeoutSeconds)
         startInfo.ArgumentList.Add("verify");
         result.UsedVerifyProfile = true;
     }
+    else if (IsWebFileApp(filePath))
+    {
+        startInfo.ArgumentList.Add("--no-launch-profile");
+        startInfo.ArgumentList.Add("--");
+        startInfo.ArgumentList.Add("--urls");
+        startInfo.ArgumentList.Add("http://127.0.0.1:0");
+    }
 
     startInfo.Environment["VERIFY_MODE"] = "1";
     
@@ -602,6 +609,36 @@ async Task<VerificationResult> VerifyFile(string filePath, int timeoutSeconds)
     }
     
     return result;
+}
+
+bool IsWebFileApp(string csFilePath)
+{
+    try
+    {
+        foreach (var line in File.ReadLines(csFilePath))
+        {
+            var trimmed = line.Trim();
+
+            if (trimmed.StartsWith("#:sdk", StringComparison.OrdinalIgnoreCase))
+            {
+                return trimmed.Contains("Microsoft.NET.Sdk.Web", StringComparison.OrdinalIgnoreCase);
+            }
+
+            if (!string.IsNullOrWhiteSpace(trimmed) &&
+                !trimmed.StartsWith("#") &&
+                !trimmed.StartsWith("//") &&
+                !trimmed.StartsWith("/*"))
+            {
+                return false;
+            }
+        }
+    }
+    catch
+    {
+        // If we can't read the file, verify it without web-specific arguments.
+    }
+
+    return false;
 }
 
 void DisplayResults(List<VerificationResult> results)
