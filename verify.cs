@@ -3,6 +3,7 @@
 #:property AllowUnsafeBlocks=true
 
 using System.Diagnostics;
+using System.ComponentModel;
 using System.Runtime.InteropServices;
 using System.Text.Json;
 using Spectre.Console;
@@ -30,18 +31,25 @@ if (string.IsNullOrEmpty(scriptPath))
 }
 
 var scriptDir = Path.GetDirectoryName(scriptPath) ?? Environment.CurrentDirectory;
+var ignoredPathCache = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
 AnsiConsole.MarkupLine($"[cyan]Scanning for .cs files from:[/] {scriptDir}");
 AnsiConsole.MarkupLine($"[cyan]Execution mode:[/] {(useParallel ? "Parallel" : "Sequential")}");
 AnsiConsole.MarkupLine($"[cyan]Timeout:[/] {timeoutSeconds}s");
 AnsiConsole.WriteLine();
 
-// Find all .cs files in subdirectories
-var csFiles = FindExecutableCsFiles(scriptDir);
+// Find all .cs files in subdirectories, excluding files that are included by other file-based apps.
+var includedFiles = FindIncludedCsFiles(scriptDir);
+var csFiles = FindExecutableCsFiles(scriptDir, includedFiles);
 
 if (csFiles.Count == 0)
 {
     AnsiConsole.MarkupLine("[yellow]No executable .cs files found[/]");
     return 0;
+}
+
+if (includedFiles.Count > 0)
+{
+    AnsiConsole.MarkupLine($"[cyan]Excluding {includedFiles.Count} included .cs file(s)[/]");
 }
 
 AnsiConsole.MarkupLine($"[green]Found {csFiles.Count} .cs file(s) to verify[/]");
@@ -137,12 +145,142 @@ bool ShouldSkipFile(string csFilePath)
     return false;
 }
 
-List<string> FindExecutableCsFiles(string rootDir)
+HashSet<string> FindIncludedCsFiles(string rootDir)
+{
+    var includedFiles = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+    foreach (var file in EnumerateCandidateCsFiles(rootDir))
+    {
+        foreach (var includePath in ReadIncludeDirectives(file))
+        {
+            foreach (var resolvedPath in ResolveIncludePath(file, includePath))
+            {
+                includedFiles.Add(resolvedPath);
+            }
+        }
+    }
+
+    return includedFiles;
+}
+
+IEnumerable<string> EnumerateCandidateCsFiles(string rootDir)
+{
+    foreach (var dir in Directory.GetDirectories(rootDir))
+    {
+        if (ShouldSkipDirectory(dir))
+        {
+            continue;
+        }
+
+        // Skip if directory contains a .csproj file
+        if (Directory.GetFiles(dir, "*.csproj").Length > 0)
+        {
+            continue;
+        }
+
+        foreach (var file in Directory.GetFiles(dir, "*.cs"))
+        {
+            var fullPath = Path.GetFullPath(file);
+            if (!IsIgnoredByGit(fullPath))
+            {
+                yield return fullPath;
+            }
+        }
+
+        foreach (var file in EnumerateCandidateCsFiles(dir))
+        {
+            yield return file;
+        }
+    }
+}
+
+IEnumerable<string> ReadIncludeDirectives(string csFilePath)
+{
+    var includePaths = new List<string>();
+
+    try
+    {
+        foreach (var line in File.ReadLines(csFilePath))
+        {
+            var trimmed = line.Trim();
+            const string includeDirective = "#:include";
+
+            if (!trimmed.StartsWith(includeDirective, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            var includePath = trimmed[includeDirective.Length..].Trim();
+            if (includePath.Length == 0)
+            {
+                continue;
+            }
+
+            includePaths.Add(TrimIncludePath(includePath));
+        }
+    }
+    catch (IOException)
+    {
+        // If we can't read the file, treat it as having no include directives.
+    }
+    catch (UnauthorizedAccessException)
+    {
+        // If we can't read the file, treat it as having no include directives.
+    }
+
+    return includePaths;
+}
+
+string TrimIncludePath(string includePath)
+{
+    var commentIndex = includePath.IndexOf("//", StringComparison.Ordinal);
+    if (commentIndex >= 0)
+    {
+        includePath = includePath[..commentIndex].TrimEnd();
+    }
+
+    return includePath.Trim().Trim('"', '\'');
+}
+
+IEnumerable<string> ResolveIncludePath(string includingFilePath, string includePath)
+{
+    var includingDirectory = Path.GetDirectoryName(includingFilePath) ?? Environment.CurrentDirectory;
+    var fullIncludePath = Path.GetFullPath(Path.Combine(includingDirectory, includePath));
+
+    if (HasWildcard(includePath))
+    {
+        var searchDirectory = Path.GetDirectoryName(fullIncludePath) ?? includingDirectory;
+        var searchPattern = Path.GetFileName(fullIncludePath);
+
+        if (!Directory.Exists(searchDirectory))
+        {
+            yield break;
+        }
+
+        foreach (var match in Directory.GetFiles(searchDirectory, searchPattern))
+        {
+            yield return Path.GetFullPath(match);
+        }
+    }
+    else if (File.Exists(fullIncludePath))
+    {
+        yield return fullIncludePath;
+    }
+}
+
+bool HasWildcard(string path) => path.Contains('*') || path.Contains('?');
+
+List<string> FindExecutableCsFiles(string rootDir, HashSet<string> includedFiles)
 {
     var files = new List<string>();
     
     foreach (var dir in Directory.GetDirectories(rootDir))
     {
+        if (ShouldSkipDirectory(dir))
+        {
+            continue;
+        }
+
         // Skip if directory contains a .csproj file
         if (Directory.GetFiles(dir, "*.csproj").Length > 0)
         {
@@ -152,17 +290,82 @@ List<string> FindExecutableCsFiles(string rootDir)
         // Add all .cs files in this directory (that shouldn't be skipped)
         foreach (var file in Directory.GetFiles(dir, "*.cs"))
         {
-            if (!ShouldSkipFile(file))
+            var fullPath = Path.GetFullPath(file);
+            if (!IsIgnoredByGit(fullPath) && !includedFiles.Contains(fullPath) && !ShouldSkipFile(fullPath))
             {
-                files.Add(file);
+                files.Add(fullPath);
             }
         }
         
         // Recursively search subdirectories
-        files.AddRange(FindExecutableCsFiles(dir));
+        files.AddRange(FindExecutableCsFiles(dir, includedFiles));
     }
     
     return files;
+}
+
+bool ShouldSkipDirectory(string directoryPath)
+{
+    var directoryName = Path.GetFileName(directoryPath);
+
+    return directoryName.StartsWith('.') || IsIgnoredByGit(directoryPath);
+}
+
+bool IsIgnoredByGit(string path)
+{
+    var fullPath = Path.GetFullPath(path);
+    if (ignoredPathCache.TryGetValue(fullPath, out var isIgnored))
+    {
+        return isIgnored;
+    }
+
+    var relativePath = Path.GetRelativePath(scriptDir, fullPath);
+    if (relativePath.StartsWith(".."))
+    {
+        ignoredPathCache[fullPath] = false;
+        return false;
+    }
+
+    var startInfo = new ProcessStartInfo
+    {
+        FileName = "git",
+        WorkingDirectory = scriptDir,
+        RedirectStandardOutput = true,
+        RedirectStandardError = true,
+        UseShellExecute = false,
+        CreateNoWindow = true
+    };
+
+    startInfo.ArgumentList.Add("check-ignore");
+    startInfo.ArgumentList.Add("-q");
+    startInfo.ArgumentList.Add("--");
+    startInfo.ArgumentList.Add(relativePath);
+
+    try
+    {
+        using var process = Process.Start(startInfo);
+        if (process is null)
+        {
+            ignoredPathCache[fullPath] = false;
+            return false;
+        }
+
+        if (!process.WaitForExit(TimeSpan.FromSeconds(2)))
+        {
+            process.Kill();
+            ignoredPathCache[fullPath] = false;
+            return false;
+        }
+
+        isIgnored = process.ExitCode == 0;
+    }
+    catch (Exception ex) when (ex is Win32Exception or InvalidOperationException or IOException)
+    {
+        isIgnored = false;
+    }
+
+    ignoredPathCache[fullPath] = isIgnored;
+    return isIgnored;
 }
 
 async Task<List<VerificationResult>> VerifyFilesSequential(List<string> files, int timeoutSeconds)
@@ -405,12 +608,12 @@ void DisplayResults(List<VerificationResult> results)
 {
     var table = new Table();
     table.Border(TableBorder.Rounded);
-    table.AddColumn("[bold]File[/]");
+    table.AddColumn("[bold]File (repo-relative)[/]");
     table.AddColumn("[bold]Status[/]");
     table.AddColumn("[bold]Duration[/]");
     table.AddColumn("[bold]Message[/]");
     
-    foreach (var result in results.OrderBy(r => r.FileName))
+    foreach (var result in results.OrderBy(r => GetRepoRelativeDisplayPath(r.FilePath)))
     {
         var statusText = result.Success 
             ? (result.HasStderr ? "[green]✓ Pass (stderr)[/]" : "[green]✓ Pass[/]") 
@@ -418,9 +621,10 @@ void DisplayResults(List<VerificationResult> results)
         
         var durationText = $"{result.Duration.TotalSeconds:F2}s";
         
-        var fileNameDisplay = result.UsedVerifyProfile 
-            ? $"{result.FileName} [dim](verify profile)[/]" 
-            : result.FileName;
+        var fileDisplay = GetRepoRelativeDisplayPath(result.FilePath).EscapeMarkup();
+        var fileNameDisplay = result.UsedVerifyProfile
+            ? $"{fileDisplay} [dim](verify profile)[/]"
+            : fileDisplay;
         
         // For failed apps, show full error output; for successful apps, show brief message
         string messageText;
@@ -478,6 +682,14 @@ void DisplayResults(List<VerificationResult> results)
         AnsiConsole.WriteLine();
         AnsiConsole.MarkupLine("[green bold]All tests passed! ✓[/]");
     }
+}
+
+string GetRepoRelativeDisplayPath(string filePath)
+{
+    var relativePath = Path.GetRelativePath(scriptDir, filePath);
+    return relativePath.StartsWith("..", StringComparison.Ordinal)
+        ? filePath
+        : relativePath;
 }
 
 class VerificationResult
