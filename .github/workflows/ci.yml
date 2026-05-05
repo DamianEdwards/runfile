@@ -75,7 +75,8 @@ jobs:
       - name: Setup .NET SDK
         uses: actions/setup-dotnet@v4
         with:
-          global-json-file: global.json
+          dotnet-version: 10.0.3xx
+          dotnet-quality: daily
       
       - name: Install HTTPS development certificate
         run: dotnet dev-certs https --verbose
