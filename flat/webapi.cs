@@ -1,7 +1,7 @@
 #!/usr/bin/env dotnet
 
 #:sdk Microsoft.NET.Sdk.Web
-#:package Microsoft.AspNetCore.OpenApi@10.0.0
+#:package Microsoft.AspNetCore.OpenApi@10.0.8
 
 using System.Text.Json.Serialization;
 
@@ -21,14 +21,14 @@ if (app.Environment.IsDevelopment())
     app.MapOpenApi();
 }
 
-app.MapGet("/", () => new HelloResponse { Message = "Hello, World!" })
+app.MapGet("/{name?}", (string name = "World") => new HelloResponse { Message = $"Hello, {name}!" })
     .WithName("HelloWorld");
 
 app.Run();
 
-class HelloResponse
+public class HelloResponse
 {
-    public string Message { get; set; } = "Hello, World!";
+    public required string Message { get; set; }
 }
 
 [JsonSerializable(typeof(HelloResponse))]
