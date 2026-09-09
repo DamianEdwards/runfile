@@ -5,6 +5,7 @@
 using System.Diagnostics;
 using System.CommandLine;
 using Hex1b;
+using Hex1b.Automation;
 using Hex1b.Input;
 using Hex1b.Layout;
 using Hex1b.Surfaces;
@@ -25,6 +26,11 @@ levelOption.Validators.Add(result =>
     }
 });
 
+var demoOption = new Option<bool>("--demo")
+{
+    Description = "Run a short headless gameplay demo and exit.",
+};
+
 var rootCommand = new RootCommand(
     """
     Blockdrop - a signal-bright falling block game powered by Hex1b.
@@ -41,18 +47,19 @@ var rootCommand = new RootCommand(
       Q or Escape         Quit
     """);
 rootCommand.Options.Add(levelOption);
+rootCommand.Options.Add(demoOption);
 rootCommand.SetAction((parseResult, cancellationToken) =>
-    RunGameAsync(parseResult.GetValue(levelOption), cancellationToken));
+    RunGameAsync(parseResult.GetValue(levelOption), parseResult.GetValue(demoOption), cancellationToken));
 
 return await rootCommand.Parse(args).InvokeAsync();
 
-static async Task<int> RunGameAsync(int level, CancellationToken cancellationToken)
+static async Task<int> RunGameAsync(int level, bool demoMode, CancellationToken cancellationToken)
 {
     var game = new BlockdropGame(level);
     var clock = Stopwatch.StartNew();
     var previousFrame = clock.Elapsed;
 
-    await using var terminal = Hex1bTerminal.CreateBuilder()
+    var terminalBuilder = Hex1bTerminal.CreateBuilder()
         .WithHex1bApp(
             appOptions => appOptions.FrameRateLimitMs = 16,
             app => context =>
@@ -67,11 +74,52 @@ static async Task<int> RunGameAsync(int level, CancellationToken cancellationTok
                     ])
                     .RedrawAfter(game.IsRunning ? 33 : 150)
                     .InputBindings(bindings => BlockdropBindings.Configure(bindings, game, app));
-            })
-        .Build();
+            });
 
-    await terminal.RunAsync(cancellationToken);
-    return 0;
+    if (demoMode)
+    {
+        terminalBuilder.WithHeadless().WithDimensions(80, 30);
+    }
+
+    await using var terminal = terminalBuilder.Build();
+    if (!demoMode)
+    {
+        return await terminal.RunAsync(cancellationToken);
+    }
+
+    using var demoTimeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+    demoTimeout.CancelAfter(TimeSpan.FromSeconds(15));
+    var runTask = terminal.RunAsync(demoTimeout.Token);
+    try
+    {
+        var frameTimeout = TimeSpan.FromSeconds(5);
+        await new Hex1bTerminalInputSequenceBuilder()
+            .WaitUntil(screen => screen.ContainsText("BLOCKDROP"), frameTimeout)
+            .Left()
+            .Up()
+            .Right()
+            .Down()
+            .Space()
+            .Key(Hex1bKey.P)
+            .WaitUntil(screen => screen.ContainsText("FIELD SUSPENDED"), frameTimeout)
+            .Key(Hex1bKey.Q)
+            .Build()
+            .ApplyAsync(terminal, demoTimeout.Token);
+
+        var exitCode = await runTask.WaitAsync(demoTimeout.Token);
+        demoTimeout.Token.ThrowIfCancellationRequested();
+        if (exitCode == 0)
+        {
+            Console.WriteLine("Demo mode - headless gameplay rendered successfully.");
+        }
+
+        return exitCode;
+    }
+    finally
+    {
+        await demoTimeout.CancelAsync();
+        await runTask;
+    }
 }
 
 static class BlockdropBindings

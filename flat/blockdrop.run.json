@@ -1,0 +1,14 @@
+{
+    "$schema": "https://json.schemastore.org/launchsettings.json",
+    "profiles": {
+        "default": {
+            "commandName": "Project",
+            "dotnetRunMessages": true
+        },
+        "verify": {
+            "commandName": "Project",
+            "dotnetRunMessages": true,
+            "commandLineArgs": "--demo"
+        }
+    }
+}
