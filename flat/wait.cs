@@ -1,6 +1,6 @@
 #!/usr/bin/env dotnet
 
-#:package Humanizer@2.14.1
+#:package Humanizer@3.0.10
 
 using System.Text.RegularExpressions;
 using Humanizer;
