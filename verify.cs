@@ -1,6 +1,5 @@
 #!/bin/usr/env dotnet
-#:package Spectre.Console@0.54.0
-#:property AllowUnsafeBlocks=true
+#:package Spectre.Console@0.57.2
 
 using System.Diagnostics;
 using System.ComponentModel;
@@ -56,7 +55,7 @@ AnsiConsole.MarkupLine($"[green]Found {csFiles.Count} .cs file(s) to verify[/]")
 AnsiConsole.WriteLine();
 
 // Run verification
-var results = useParallel 
+var results = useParallel
     ? await VerifyFilesParallel(csFiles, timeoutSeconds)
     : await VerifyFilesSequential(csFiles, timeoutSeconds);
 
@@ -76,15 +75,15 @@ bool HasVerifyLaunchProfile(string csFilePath)
         var directory = Path.GetDirectoryName(csFilePath);
         var fileNameWithoutExtension = Path.GetFileNameWithoutExtension(csFilePath);
         var runJsonPath = Path.Combine(directory ?? ".", $"{fileNameWithoutExtension}.run.json");
-        
+
         if (!File.Exists(runJsonPath))
         {
             return false;
         }
-        
+
         var jsonContent = File.ReadAllText(runJsonPath);
         using var doc = JsonDocument.Parse(jsonContent, new JsonDocumentOptions { AllowTrailingCommas = true });
-        
+
         if (doc.RootElement.TryGetProperty("profiles", out var profiles))
         {
             return profiles.TryGetProperty("verify", out _);
@@ -94,7 +93,7 @@ bool HasVerifyLaunchProfile(string csFilePath)
     {
         // If we can't read or parse the file, just proceed without the launch profile
     }
-    
+
     return false;
 }
 
@@ -106,21 +105,21 @@ bool ShouldSkipFile(string csFilePath)
         foreach (var line in File.ReadLines(csFilePath))
         {
             var trimmed = line.Trim();
-            
+
             // Stop at first code line (non-comment, non-directive, non-blank)
-            if (!string.IsNullOrWhiteSpace(trimmed) && 
-                !trimmed.StartsWith("#") && 
-                !trimmed.StartsWith("//") && 
+            if (!string.IsNullOrWhiteSpace(trimmed) &&
+                !trimmed.StartsWith("#") &&
+                !trimmed.StartsWith("//") &&
                 !trimmed.StartsWith("/*"))
             {
                 break;
             }
-            
+
             // Check for TargetFramework property directive
             if (trimmed.StartsWith("#:property TargetFramework=", StringComparison.OrdinalIgnoreCase))
             {
                 var tfm = trimmed.Substring("#:property TargetFramework=".Length).Trim();
-                
+
                 // Check if TFM is OS-specific and doesn't match current OS
                 if (tfm.Contains("-windows", StringComparison.OrdinalIgnoreCase) && !OperatingSystem.IsWindows())
                 {
@@ -141,7 +140,7 @@ bool ShouldSkipFile(string csFilePath)
     {
         // If we can't read the file, don't skip it
     }
-    
+
     return false;
 }
 
@@ -273,7 +272,7 @@ bool HasWildcard(string path) => path.Contains('*') || path.Contains('?');
 List<string> FindExecutableCsFiles(string rootDir, HashSet<string> includedFiles)
 {
     var files = new List<string>();
-    
+
     foreach (var dir in Directory.GetDirectories(rootDir))
     {
         if (ShouldSkipDirectory(dir))
@@ -286,7 +285,7 @@ List<string> FindExecutableCsFiles(string rootDir, HashSet<string> includedFiles
         {
             continue;
         }
-        
+
         // Add all .cs files in this directory (that shouldn't be skipped)
         foreach (var file in Directory.GetFiles(dir, "*.cs"))
         {
@@ -296,11 +295,11 @@ List<string> FindExecutableCsFiles(string rootDir, HashSet<string> includedFiles
                 files.Add(fullPath);
             }
         }
-        
+
         // Recursively search subdirectories
         files.AddRange(FindExecutableCsFiles(dir, includedFiles));
     }
-    
+
     return files;
 }
 
@@ -371,7 +370,7 @@ bool IsIgnoredByGit(string path)
 async Task<List<VerificationResult>> VerifyFilesSequential(List<string> files, int timeoutSeconds)
 {
     var results = new List<VerificationResult>();
-    
+
     await AnsiConsole.Progress()
         .Columns(
             new TaskDescriptionColumn(),
@@ -380,7 +379,7 @@ async Task<List<VerificationResult>> VerifyFilesSequential(List<string> files, i
         .StartAsync(async ctx =>
         {
             var task = ctx.AddTask($"[green]Verifying files (0/{files.Count})[/]", maxValue: files.Count);
-            
+
             foreach (var file in files)
             {
                 var result = await VerifyFile(file, timeoutSeconds);
@@ -389,7 +388,7 @@ async Task<List<VerificationResult>> VerifyFilesSequential(List<string> files, i
                 task.Description = $"[green]Verifying files ({results.Count}/{files.Count})[/]";
             }
         });
-    
+
     return results;
 }
 
@@ -397,7 +396,7 @@ async Task<List<VerificationResult>> VerifyFilesParallel(List<string> files, int
 {
     var results = new List<VerificationResult>();
     var lockObj = new Lock();
-    
+
     await AnsiConsole.Progress()
         .Columns(
             new TaskDescriptionColumn(),
@@ -406,7 +405,7 @@ async Task<List<VerificationResult>> VerifyFilesParallel(List<string> files, int
         .StartAsync(async ctx =>
         {
             var progressTask = ctx.AddTask($"[green]Verifying files (0/{files.Count})[/]", maxValue: files.Count);
-            
+
             var tasks = files.Select(async file =>
             {
                 var result = await VerifyFile(file, timeoutSeconds);
@@ -417,10 +416,10 @@ async Task<List<VerificationResult>> VerifyFilesParallel(List<string> files, int
                     progressTask.Description = $"[green]Verifying files ({results.Count}/{files.Count})[/]";
                 }
             });
-            
+
             await Task.WhenAll(tasks);
         });
-    
+
     return results;
 }
 
@@ -431,7 +430,7 @@ async Task<VerificationResult> VerifyFile(string filePath, int timeoutSeconds)
         FilePath = filePath,
         FileName = Path.GetFileName(filePath)
     };
-    
+
     var startInfo = new ProcessStartInfo
     {
         FileName = "dotnet",
@@ -442,10 +441,10 @@ async Task<VerificationResult> VerifyFile(string filePath, int timeoutSeconds)
         CreateNoWindow = true,
         WorkingDirectory = Path.GetDirectoryName(filePath) ?? Environment.CurrentDirectory
     };
-    
+
     // Add arguments using ArgumentList to avoid escaping issues
     startInfo.ArgumentList.Add(filePath);
-    
+
     // Check for .run.json with verify launch profile
     var hasVerifyProfile = HasVerifyLaunchProfile(filePath);
     if (hasVerifyProfile)
@@ -463,18 +462,18 @@ async Task<VerificationResult> VerifyFile(string filePath, int timeoutSeconds)
     }
 
     startInfo.Environment["VERIFY_MODE"] = "1";
-    
+
     if (OperatingSystem.IsWindows())
     {
         startInfo.CreateNewProcessGroup = true;
     }
-    
+
     var process = new Process { StartInfo = startInfo };
     var output = new List<string>();
     var error = new List<string>();
     var shutdownMessageDetected = false;
     var shutdownTcs = new TaskCompletionSource<bool>();
-    
+
     process.OutputDataReceived += (s, e) =>
     {
         if (e.Data != null)
@@ -490,7 +489,7 @@ async Task<VerificationResult> VerifyFile(string filePath, int timeoutSeconds)
             }
         }
     };
-    
+
     process.ErrorDataReceived += (s, e) =>
     {
         if (e.Data != null)
@@ -501,39 +500,39 @@ async Task<VerificationResult> VerifyFile(string filePath, int timeoutSeconds)
             }
         }
     };
-    
+
     var stopwatch = Stopwatch.StartNew();
-    
+
     try
     {
         process.Start();
         process.BeginOutputReadLine();
         process.BeginErrorReadLine();
-        
+
         // Wait for either: process exit, shutdown message detected, or timeout
         var timeout = TimeSpan.FromSeconds(timeoutSeconds);
         var timeoutTask = Task.Delay(timeout);
         var processTask = Task.Run(process.WaitForExit);
 
         var completedTask = await Task.WhenAny(processTask, shutdownTcs.Task, timeoutTask);
-        
+
         if (completedTask == shutdownTcs.Task)
         {
             // Shutdown message detected - send shutdown signal
             try
             {
                 process.Stop();
-                
+
                 if (!process.HasExited)
                 {
                     process.Kill();
                 }
-                
+
                 stopwatch.Stop();
                 result.Success = true;
                 result.ExitCode = 0;
                 result.Duration = stopwatch.Elapsed;
-                
+
                 result.FullOutput = string.Join("\n", output);
                 result.FullError = string.Join("\n", error);
                 result.HasStderr = error.Count > 0;
@@ -546,7 +545,7 @@ async Task<VerificationResult> VerifyFile(string filePath, int timeoutSeconds)
                 result.Success = false;
                 result.Duration = stopwatch.Elapsed;
                 result.Message = "Failed to gracefully stop app";
-                
+
                 result.FullOutput = string.Join("\n", output);
                 result.FullError = string.Join("\n", error);
             }
@@ -556,10 +555,10 @@ async Task<VerificationResult> VerifyFile(string filePath, int timeoutSeconds)
             // Process timed out without shutdown message
             var allOutput = string.Join("\n", output);
             var allError = string.Join("\n", error);
-            
+
             result.FullOutput = allOutput;
             result.FullError = allError;
-            
+
             process.Kill();
             stopwatch.Stop();
             result.Success = false;
@@ -573,11 +572,11 @@ async Task<VerificationResult> VerifyFile(string filePath, int timeoutSeconds)
             result.ExitCode = process.ExitCode;
             result.Duration = stopwatch.Elapsed;
             result.Success = process.ExitCode == 0;
-            
+
             result.FullOutput = string.Join("\n", output);
             result.FullError = string.Join("\n", error);
             result.HasStderr = error.Count > 0;
-            
+
             if (result.Success)
             {
                 result.Message = "Completed successfully";
@@ -607,7 +606,7 @@ async Task<VerificationResult> VerifyFile(string filePath, int timeoutSeconds)
         }
         process.Dispose();
     }
-    
+
     return result;
 }
 
@@ -649,40 +648,40 @@ void DisplayResults(List<VerificationResult> results)
     table.AddColumn("[bold]Status[/]");
     table.AddColumn("[bold]Duration[/]");
     table.AddColumn("[bold]Message[/]");
-    
+
     foreach (var result in results.OrderBy(r => GetRepoRelativeDisplayPath(r.FilePath)))
     {
-        var statusText = result.Success 
-            ? (result.HasStderr ? "[green]✓ Pass (stderr)[/]" : "[green]✓ Pass[/]") 
+        var statusText = result.Success
+            ? (result.HasStderr ? "[green]✓ Pass (stderr)[/]" : "[green]✓ Pass[/]")
             : $"[red]✗ Fail ({result.ExitCode})[/]";
-        
+
         var durationText = $"{result.Duration.TotalSeconds:F2}s";
-        
+
         var fileDisplay = GetRepoRelativeDisplayPath(result.FilePath).EscapeMarkup();
         var fileNameDisplay = result.UsedVerifyProfile
             ? $"{fileDisplay} [dim](verify profile)[/]"
             : fileDisplay;
-        
+
         // For failed apps, show full error output; for successful apps, show brief message
         string messageText;
         if (!result.Success)
         {
             // Combine error and output for failed cases
-            var fullMessage = !string.IsNullOrEmpty(result.FullError) 
-                ? result.FullError 
+            var fullMessage = !string.IsNullOrEmpty(result.FullError)
+                ? result.FullError
                 : result.FullOutput;
-            
-            messageText = !string.IsNullOrEmpty(fullMessage) 
-                ? fullMessage 
+
+            messageText = !string.IsNullOrEmpty(fullMessage)
+                ? fullMessage
                 : result.Message;
         }
         else
         {
-            messageText = result.Message.Length > 60 
-                ? result.Message.Substring(0, 57) + "..." 
+            messageText = result.Message.Length > 60
+                ? result.Message.Substring(0, 57) + "..."
                 : result.Message;
         }
-        
+
         table.AddRow(
             fileNameDisplay,
             statusText,
@@ -690,30 +689,30 @@ void DisplayResults(List<VerificationResult> results)
             messageText.EscapeMarkup()
         );
     }
-    
+
     AnsiConsole.Write(table);
     AnsiConsole.WriteLine();
-    
+
     // Summary
     var totalCount = results.Count;
     var passCount = results.Count(r => r.Success);
     var failCount = totalCount - passCount;
-    
+
     var summaryTable = new Table();
     summaryTable.Border(TableBorder.None);
     summaryTable.HideHeaders();
     summaryTable.AddColumn("");
     summaryTable.AddColumn("");
-    
+
     summaryTable.AddRow("[bold]Total:[/]", totalCount.ToString());
     summaryTable.AddRow("[green]Passed:[/]", passCount.ToString());
     if (failCount > 0)
     {
         summaryTable.AddRow("[red]Failed:[/]", failCount.ToString());
     }
-    
+
     AnsiConsole.Write(summaryTable);
-    
+
     if (failCount == 0)
     {
         AnsiConsole.WriteLine();
@@ -743,7 +742,7 @@ class VerificationResult
     public bool UsedVerifyProfile { get; set; }
 }
 
-internal static partial class ProcessExtensions
+internal static class ProcessExtensions
 {
     // Code in this class adapted from https://github.com/devlooped/dotnet-stop
     // See THIRDPARTYNOTICES for license information.
@@ -831,7 +830,7 @@ internal static partial class ProcessExtensions
         }
     }
 
-    [LibraryImport("kernel32.dll")]
+    [DllImport("kernel32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
-    internal static partial bool GenerateConsoleCtrlEvent(uint dwCtrlEvent, uint dwProcessGroupId);
+    internal static extern bool GenerateConsoleCtrlEvent(uint dwCtrlEvent, uint dwProcessGroupId);
 }

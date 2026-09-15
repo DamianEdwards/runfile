@@ -1,7 +1,7 @@
 #!/usr/bin/env dotnet
 
-#:package xunit.v3@3.2.2
-#:package Microsoft.AspNetCore.Mvc.Testing@10.0.8
+#:package xunit.v3@4.0.1
+#:package Microsoft.AspNetCore.Mvc.Testing@11.0.0-rc.1.26425.128
 #:property PublishAot=false
 
 // Reference the webapi project to test it
@@ -11,14 +11,9 @@
 using Microsoft.AspNetCore.Mvc.Testing;
 using Xunit;
 
-public class BasicTests : IClassFixture<WebApplicationFactory<HelloResponse>>
+public class BasicTests(WebApplicationFactory<HelloResponse> factory) : IClassFixture<WebApplicationFactory<HelloResponse>>
 {
-    private readonly WebApplicationFactory<HelloResponse> _factory;
-
-    public BasicTests(WebApplicationFactory<HelloResponse> factory)
-    {
-        _factory = factory;
-    }
+    private readonly WebApplicationFactory<HelloResponse> _factory = factory;
 
     [Theory]
     [InlineData("/")]

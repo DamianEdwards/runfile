@@ -1,7 +1,7 @@
 #!/usr/bin/env dotnet
 
 #:sdk Microsoft.NET.Sdk.Web
-#:package Microsoft.AspNetCore.OpenApi@10.0.8
+#:package Microsoft.AspNetCore.OpenApi@11.0.0-rc.1.26425.128
 
 using System.Text.Json.Serialization;
 
