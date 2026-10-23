@@ -1,6 +1,6 @@
 #!/usr/bin/env dotnet
-#:package Microsoft.NET.Test.Sdk@18.10.0
-#:package TUnit.Playwright@1.67.0
+#:package Microsoft.NET.Test.Sdk@18.11.0
+#:package TUnit.Playwright@1.75.0
 #:property PublishAot=false
 
 using TUnit.Playwright;

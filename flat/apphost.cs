@@ -1,6 +1,6 @@
 #!/usr/bin/env aspire
 
-#:sdk Aspire.AppHost.Sdk@13.5.3
+#:sdk Aspire.AppHost.Sdk@13.6.1
 //#:package Aspire.Hosting.Redis@13.5.3
 #:property AspireUseCliBundle=true
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env dotnet
 
-#:package xunit.v3@4.0.1
-#:package Microsoft.AspNetCore.Mvc.Testing@11.0.0-rc.1.26425.128
+#:package xunit.v3@4.0.2
+#:package Microsoft.AspNetCore.Mvc.Testing@11.0.0-rc.2.26504.105
 #:property PublishAot=false
 
 // Reference the webapi project to test it
