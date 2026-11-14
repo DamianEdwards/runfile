@@ -1,7 +1,7 @@
 #!/usr/bin/env aspire
 
-#:sdk Aspire.AppHost.Sdk@13.6.3
-//#:package Aspire.Hosting.Redis@13.5.3
+#:sdk Aspire.AppHost.Sdk@13.6.5
+//#:package Aspire.Hosting.Redis@13.6.5
 #:property AspireUseCliBundle=true
 
 var builder = DistributedApplication.CreateBuilder(args);

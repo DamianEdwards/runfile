@@ -1,6 +1,7 @@
-#:property TargetFramework=net10.0-windows
-#:package Microsoft.Windows.CsWin32@0.3.242
-#:package Humanizer@3.0.0-rc.30
+#!/usr/bin/env dotnet
+#:property TargetFramework=net11.0-windows
+#:package Microsoft.Windows.CsWin32@0.3.371
+#:package Humanizer@3.0.10
 
 using Windows.Win32;
 using Humanizer;

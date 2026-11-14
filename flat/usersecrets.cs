@@ -1,4 +1,5 @@
-#:package Microsoft.Extensions.Configuration.UserSecrets@10.0.0
+#!/usr/bin/env dotnet
+#:package Microsoft.Extensions.Configuration.UserSecrets@11.0.0
 
 using System.Reflection;
 using Microsoft.Extensions.Configuration;

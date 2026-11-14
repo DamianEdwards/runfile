@@ -1,12 +1,11 @@
 #!/usr/bin/env dotnet
 
-#:package xunit.v3@4.0.2
-#:package Microsoft.AspNetCore.Mvc.Testing@11.0.0-rc.2.26504.105
+#:package xunit.v3@4.0.3
+#:package Microsoft.AspNetCore.Mvc.Testing@11.0.0
 #:property PublishAot=false
 
 // Reference the webapi project to test it
 #:ref ./webapi.cs
-#:property ExperimentalFileBasedProgramEnableRefDirective=true
 
 using Microsoft.AspNetCore.Mvc.Testing;
 using Xunit;
