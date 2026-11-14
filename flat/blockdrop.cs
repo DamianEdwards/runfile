@@ -1,6 +1,6 @@
 #!/usr/bin/env dotnet
-#:package Hex1b@0.165.0
-#:package System.CommandLine@2.0.2
+#:package Hex1b@0.176.0
+#:package System.CommandLine@3.0.0
 
 using System.Diagnostics;
 using System.CommandLine;
