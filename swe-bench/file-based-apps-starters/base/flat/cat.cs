@@ -4,8 +4,6 @@
 // - include/exclude directives moving to non-experimental in 10.0.300
 // - transitive directives experimental status still being debated for 10.0.300
 // Note: These could be put in a `Directory.Build.props` file instead if preferred
-
-#:package System.CommandLine@3.0.0
 #:property ExperimentalFileBasedProgramEnableIncludeDirective=true
 #:property ExperimentalFileBasedProgramEnableExcludeDirective=true
 #:property ExperimentalFileBasedProgramEnableTransitiveDirectives=true

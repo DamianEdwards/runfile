@@ -1,4 +1,4 @@
-#:package System.CommandLine@2.0.*
+#:package System.CommandLine@3.0.0
 #:include ./cat.helpers.cs
 
 using System.CommandLine;

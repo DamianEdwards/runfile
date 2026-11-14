@@ -481,7 +481,9 @@ async Task<VerificationResult> VerifyFile(string filePath, int timeoutSeconds)
             lock (output)
             {
                 output.Add(e.Data);
-                if (e.Data.Contains("Press Ctrl+C to shut down.") && !shutdownMessageDetected)
+                // Aspire CLI-launched AppHosts print "Press CTRL+C to stop the AppHost and exit."
+                if ((e.Data.Contains("Press Ctrl+C to shut down.") || e.Data.Contains("Press CTRL+C to stop the AppHost"))
+                    && !shutdownMessageDetected)
                 {
                     shutdownMessageDetected = true;
                     shutdownTcs.TrySetResult(true);
