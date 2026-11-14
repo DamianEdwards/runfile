@@ -5,19 +5,51 @@ using System.Diagnostics;
 using System.ComponentModel;
 using System.Runtime.InteropServices;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using Spectre.Console;
 
 // Parse command-line arguments
-var useParallel = args.Contains("--parallel", StringComparer.OrdinalIgnoreCase);
+var useParallel = false;
+var verbose = false;
+var noCache = false;
+string? selectedFile = null;
 var timeoutSeconds = 10; // Default timeout
 for (int i = 0; i < args.Length; i++)
 {
-    if (args[i].Equals("--timeout", StringComparison.OrdinalIgnoreCase) && i + 1 < args.Length)
+    switch (args[i].ToLowerInvariant())
     {
-        if (int.TryParse(args[i + 1], out var parsed))
-        {
-            timeoutSeconds = parsed;
-        }
+        case "--parallel":
+            useParallel = true;
+            break;
+        case "--verbose":
+            verbose = true;
+            break;
+        case "--no-cache":
+            noCache = true;
+            break;
+        case "--file":
+            if (++i >= args.Length || string.IsNullOrWhiteSpace(args[i]) || args[i].StartsWith("--"))
+            {
+                AnsiConsole.MarkupLine("[red]Error: --file requires a file path.[/]");
+                return 1;
+            }
+            selectedFile = args[i];
+            break;
+        case "--timeout":
+            if (++i >= args.Length || !int.TryParse(args[i], out timeoutSeconds) || timeoutSeconds <= 0)
+            {
+                AnsiConsole.MarkupLine("[red]Error: --timeout requires a positive number of seconds.[/]");
+                return 1;
+            }
+            break;
+        case "--help":
+        case "-h":
+            AnsiConsole.WriteLine("Usage: dotnet verify.cs -- [--file <path>] [--parallel] [--timeout <seconds>] [--verbose] [--no-cache]");
+            AnsiConsole.WriteLine("--file paths are relative to the current working directory.");
+            return 0;
+        default:
+            AnsiConsole.MarkupLine($"[red]Error: Unknown argument '{args[i].EscapeMarkup()}'. Use --help for usage.[/]");
+            return 1;
     }
 }
 
@@ -40,6 +72,28 @@ AnsiConsole.WriteLine();
 var includedFiles = FindIncludedCsFiles(scriptDir);
 var csFiles = FindExecutableCsFiles(scriptDir, includedFiles);
 
+if (selectedFile is not null)
+{
+    string fullPath;
+    try
+    {
+        fullPath = Path.GetFullPath(selectedFile);
+    }
+    catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException)
+    {
+        AnsiConsole.MarkupLine($"[red]Error: Invalid file path: {ex.Message.EscapeMarkup()}[/]");
+        return 1;
+    }
+
+    var comparer = OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
+    csFiles = csFiles.Where(file => comparer.Equals(file, fullPath)).ToList();
+    if (csFiles.Count == 0)
+    {
+        AnsiConsole.MarkupLine($"[red]Error: '{selectedFile.EscapeMarkup()}' is not an executable verification candidate on this platform.[/]");
+        return 1;
+    }
+}
+
 if (csFiles.Count == 0)
 {
     AnsiConsole.MarkupLine("[yellow]No executable .cs files found[/]");
@@ -52,6 +106,12 @@ if (includedFiles.Count > 0)
 }
 
 AnsiConsole.MarkupLine($"[green]Found {csFiles.Count} .cs file(s) to verify[/]");
+if (verbose)
+{
+    AnsiConsole.WriteLine($"Runtime: {RuntimeInformation.FrameworkDescription}; OS: {RuntimeInformation.OSDescription}");
+    AnsiConsole.WriteLine($"CI: {Environment.GetEnvironmentVariable("CI") ?? "(unset)"}; GITHUB_ACTIONS: {Environment.GetEnvironmentVariable("GITHUB_ACTIONS") ?? "(unset)"}");
+    AnsiConsole.WriteLine($"Redirected streams: stdin={Console.IsInputRedirected}, stdout={Console.IsOutputRedirected}, stderr={Console.IsErrorRedirected}");
+}
 AnsiConsole.WriteLine();
 
 // Run verification
@@ -444,6 +504,10 @@ async Task<VerificationResult> VerifyFile(string filePath, int timeoutSeconds)
 
     // Add arguments using ArgumentList to avoid escaping issues
     startInfo.ArgumentList.Add(filePath);
+    if (noCache)
+    {
+        startInfo.ArgumentList.Add("--no-cache");
+    }
 
     // Check for .run.json with verify launch profile
     var hasVerifyProfile = HasVerifyLaunchProfile(filePath);
@@ -462,6 +526,8 @@ async Task<VerificationResult> VerifyFile(string filePath, int timeoutSeconds)
     }
 
     startInfo.Environment["VERIFY_MODE"] = "1";
+    startInfo.Environment["NO_COLOR"] = "1";
+    result.Command = $"dotnet {string.Join(" ", startInfo.ArgumentList.Select(argument => $"\"{argument}\""))}";
 
     if (OperatingSystem.IsWindows())
     {
@@ -481,8 +547,10 @@ async Task<VerificationResult> VerifyFile(string filePath, int timeoutSeconds)
             lock (output)
             {
                 output.Add(e.Data);
+                // Some CLI output retains ANSI styling even with NO_COLOR set.
+                var plainOutput = Regex.Replace(e.Data, @"\x1b\[[0-?]*[ -/]*[@-~]", "");
                 // Aspire CLI-launched AppHosts print "Press CTRL+C to stop the AppHost and exit."
-                if ((e.Data.Contains("Press Ctrl+C to shut down.") || e.Data.Contains("Press CTRL+C to stop the AppHost"))
+                if ((plainOutput.Contains("Press Ctrl+C to shut down.") || plainOutput.Contains("Press CTRL+C to stop the AppHost"))
                     && !shutdownMessageDetected)
                 {
                     shutdownMessageDetected = true;
@@ -655,7 +723,9 @@ void DisplayResults(List<VerificationResult> results)
     {
         var statusText = result.Success
             ? (result.HasStderr ? "[green]✓ Pass (stderr)[/]" : "[green]✓ Pass[/]")
-            : $"[red]✗ Fail ({result.ExitCode})[/]";
+            : result.ExitCode is int exitCode
+                ? $"[red]✗ Fail ({exitCode})[/]"
+                : "[red]✗ Fail[/]";
 
         var durationText = $"{result.Duration.TotalSeconds:F2}s";
 
@@ -664,25 +734,9 @@ void DisplayResults(List<VerificationResult> results)
             ? $"{fileDisplay} [dim](verify profile)[/]"
             : fileDisplay;
 
-        // For failed apps, show full error output; for successful apps, show brief message
-        string messageText;
-        if (!result.Success)
-        {
-            // Combine error and output for failed cases
-            var fullMessage = !string.IsNullOrEmpty(result.FullError)
-                ? result.FullError
-                : result.FullOutput;
-
-            messageText = !string.IsNullOrEmpty(fullMessage)
-                ? fullMessage
-                : result.Message;
-        }
-        else
-        {
-            messageText = result.Message.Length > 60
-                ? result.Message.Substring(0, 57) + "..."
-                : result.Message;
-        }
+        var messageText = result.Message.Length > 60
+            ? result.Message.Substring(0, 57) + "..."
+            : result.Message;
 
         table.AddRow(
             fileNameDisplay,
@@ -694,6 +748,20 @@ void DisplayResults(List<VerificationResult> results)
 
     AnsiConsole.Write(table);
     AnsiConsole.WriteLine();
+
+    foreach (var result in results.Where(result => !result.Success || verbose)
+        .OrderBy(result => GetRepoRelativeDisplayPath(result.FilePath)))
+    {
+        AnsiConsole.WriteLine($"--- {GetRepoRelativeDisplayPath(result.FilePath)} ---");
+        AnsiConsole.WriteLine($"Result: {result.Message} ({result.Duration.TotalSeconds:F2}s); exit code: {result.ExitCode?.ToString() ?? "(not exited)"}");
+        AnsiConsole.WriteLine($"Command: {result.Command}");
+        AnsiConsole.WriteLine($"Working directory: {Path.GetDirectoryName(result.FilePath)}");
+        AnsiConsole.WriteLine("stdout:");
+        AnsiConsole.WriteLine(string.IsNullOrEmpty(result.FullOutput) ? "(empty)" : result.FullOutput);
+        AnsiConsole.WriteLine("stderr:");
+        AnsiConsole.WriteLine(string.IsNullOrEmpty(result.FullError) ? "(empty)" : result.FullError);
+        AnsiConsole.WriteLine();
+    }
 
     // Summary
     var totalCount = results.Count;
@@ -735,7 +803,8 @@ class VerificationResult
     public string FilePath { get; set; } = "";
     public string FileName { get; set; } = "";
     public bool Success { get; set; }
-    public int ExitCode { get; set; }
+    public int? ExitCode { get; set; }
+    public string Command { get; set; } = "";
     public TimeSpan Duration { get; set; }
     public string Message { get; set; } = "";
     public string FullOutput { get; set; } = "";
