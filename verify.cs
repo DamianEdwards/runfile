@@ -659,6 +659,10 @@ string ResolveProjectPath(string referencingPath, string projectPath)
         return Path.GetFullPath(projectFiles[0]);
     }
 
+    if (!fullPath.EndsWith("proj", StringComparison.OrdinalIgnoreCase))
+    {
+        throw new InvalidOperationException($"Cannot identify project build dependency '{fullPath}'.");
+    }
     return fullPath;
 }
 
@@ -731,6 +735,11 @@ void RunGroupingTests()
             [projectApp, sharedApp, independent], ["project.cs", "shared.cs"], ["independent.cs"]);
         Check("transitive project dependency",
             [projectApp, baseApp, independent], ["project.cs", "base.cs"], ["independent.cs"]);
+        Directory.CreateDirectory(Path.Combine(root, "project-directory"));
+        File.WriteAllText(Path.Combine(root, "project-directory", "library.csproj"), "<Project><ItemGroup><ProjectReference Include=\"../base.csproj\" /></ItemGroup></Project>");
+        var directoryApp = Write("directory.cs", "#:project ./project-directory");
+        Check("project directory resolution",
+            [directoryApp, baseApp, independent], ["directory.cs", "base.cs"], ["independent.cs"]);
 
         var includes = Write("includes.cs", "#:include \"dependency.cs\" // comment\n#:include\tmiddle.cs");
         if (!ReadIncludeDirectives(includes).SequenceEqual(["dependency.cs", "middle.cs"]))
@@ -752,6 +761,9 @@ void RunGroupingTests()
         var missingProject = Write("missing-project.cs", "#:project ./missing.csproj");
         MustFail("missing referenced project fails scheduling",
             () => GroupFilesByReferences([missingProject, independent]));
+        var missingDirectory = Write("missing-directory.cs", "#:project ./missing-directory");
+        MustFail("missing project directory fails scheduling",
+            () => GroupFilesByReferences([missingDirectory, independent]));
         using (var locked = new FileStream(dependency, FileMode.Open, FileAccess.ReadWrite, FileShare.None))
         {
             MustFail("locked source fails scheduling", () => GroupFilesByReferences([dependency, independent]));
