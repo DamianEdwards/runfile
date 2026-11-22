@@ -530,7 +530,7 @@ async Task<List<VerificationResult>> VerifyFilesParallel(List<string> files, int
 // dependency graphs touch the same node (whether or not that node is itself a selected file).
 List<List<string>> GroupFilesByReferences(List<string> files)
 {
-    var comparer = StringComparer.OrdinalIgnoreCase;
+    var comparer = OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
     var fileSet = new HashSet<string>(files, comparer);
     var dependencies = new Dictionary<string, List<string>>(comparer);
     var parent = new Dictionary<string, string>(comparer);
@@ -740,6 +740,18 @@ void RunGroupingTests()
         var directoryApp = Write("directory.cs", "#:project ./project-directory");
         Check("project directory resolution",
             [directoryApp, baseApp, independent], ["directory.cs", "base.cs"], ["independent.cs"]);
+
+        var upper = Write("Case.cs");
+        if (!File.Exists(Path.Combine(root, "case.cs")))
+        {
+            var lower = Write("case.cs");
+            Check("case-distinct files on case-sensitive filesystem",
+                [upper, lower, independent], ["Case.cs"], ["case.cs"], ["independent.cs"]);
+        }
+        else
+        {
+            AnsiConsole.WriteLine("SKIP: case-distinct files (case-insensitive filesystem)");
+        }
 
         var includes = Write("includes.cs", "#:include \"dependency.cs\" // comment\n#:include\tmiddle.cs");
         if (!ReadIncludeDirectives(includes).SequenceEqual(["dependency.cs", "middle.cs"]))
