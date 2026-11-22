@@ -265,8 +265,7 @@ IEnumerable<string> ReadPathDirectives(string csFilePath, string directive)
         {
             var trimmed = line.Trim();
 
-            if (!trimmed.StartsWith(directive + " ", StringComparison.OrdinalIgnoreCase)
-                && !trimmed.StartsWith(directive + "\t", StringComparison.OrdinalIgnoreCase))
+            if (!trimmed.StartsWith(directive, StringComparison.OrdinalIgnoreCase))
             {
                 continue;
             }
@@ -459,6 +458,17 @@ async Task<List<VerificationResult>> VerifyFilesParallel(List<string> files, int
     var results = new List<VerificationResult>();
     var lockObj = new Lock();
 
+    // Files linked via #:ref/#:project share build outputs (building a referencing app also builds
+    // its references), so each linked group runs sequentially while groups run in parallel.
+    var groups = GroupFilesByReferences(files);
+    if (verbose)
+    {
+        foreach (var group in groups.Where(g => g.Count > 1))
+        {
+            AnsiConsole.WriteLine($"Sequential group: {string.Join(" -> ", group.Select(f => Path.GetRelativePath(scriptDir, f)))}");
+        }
+    }
+
     await AnsiConsole.Progress()
         .Columns(
             new TaskDescriptionColumn(),
@@ -468,9 +478,7 @@ async Task<List<VerificationResult>> VerifyFilesParallel(List<string> files, int
         {
             var progressTask = ctx.AddTask($"[green]Verifying files (0/{files.Count})[/]", maxValue: files.Count);
 
-            // Files linked via #:ref share build outputs (building a referencing app also builds the
-            // referenced app into its artifacts directory), so each linked group runs sequentially.
-            var tasks = GroupFilesByReferences(files).Select(async group =>
+            var tasks = groups.Select(async group =>
             {
                 foreach (var file in group)
                 {
@@ -490,45 +498,64 @@ async Task<List<VerificationResult>> VerifyFilesParallel(List<string> files, int
     return results;
 }
 
+// Groups files that share build outputs: any two files whose transitive #:ref/#:project
+// dependency graphs touch the same node (whether or not that node is itself a selected file).
 List<List<string>> GroupFilesByReferences(List<string> files)
 {
     var comparer = StringComparer.OrdinalIgnoreCase;
     var fileSet = new HashSet<string>(files, comparer);
-    var references = new Dictionary<string, List<string>>(comparer);
-    var parent = files.ToDictionary(f => f, f => f, comparer);
+    var dependencies = new Dictionary<string, List<string>>(comparer);
+    var parent = new Dictionary<string, string>(comparer);
 
-    string Find(string f) => comparer.Equals(parent[f], f) ? f : parent[f] = Find(parent[f]);
-
-    foreach (var file in files)
+    string Find(string node)
     {
-        var refs = ReadPathDirectives(file, "#:ref")
-            .SelectMany(refPath => ResolveIncludePath(file, refPath))
-            .Where(fileSet.Contains)
-            .ToList();
-        references[file] = refs;
-
-        foreach (var referenced in refs)
+        if (!parent.TryGetValue(node, out var p))
         {
-            parent[Find(file)] = Find(referenced);
+            parent[node] = node;
+            return node;
+        }
+
+        return comparer.Equals(p, node) ? node : parent[node] = Find(p);
+    }
+
+    var pending = new Queue<string>(files);
+    while (pending.TryDequeue(out var node))
+    {
+        if (dependencies.ContainsKey(node))
+        {
+            continue;
+        }
+
+        var deps = GetBuildDependencies(node);
+        dependencies[node] = deps;
+
+        foreach (var dep in deps)
+        {
+            parent[Find(node)] = Find(dep);
+            pending.Enqueue(dep);
         }
     }
 
     var groups = new Dictionary<string, List<string>>(comparer);
     var visited = new HashSet<string>(comparer);
 
-    void Visit(string file, List<string> ordered)
+    // Referenced files are verified before the files that (transitively) reference them.
+    void Visit(string node, List<string> ordered)
     {
-        if (!visited.Add(file))
+        if (!visited.Add(node))
         {
             return;
         }
 
-        foreach (var referenced in references[file])
+        foreach (var dep in dependencies[node])
         {
-            Visit(referenced, ordered);
+            Visit(dep, ordered);
         }
 
-        ordered.Add(file);
+        if (fileSet.Contains(node))
+        {
+            ordered.Add(node);
+        }
     }
 
     foreach (var file in files)
@@ -539,12 +566,72 @@ List<List<string>> GroupFilesByReferences(List<string> files)
             groups[root] = ordered = [];
         }
 
-        // Referenced files are verified before the files that reference them.
         Visit(file, ordered);
     }
 
     return groups.Values.ToList();
 }
+
+List<string> GetBuildDependencies(string path)
+{
+    var deps = new List<string>();
+
+    if (path.EndsWith(".cs", StringComparison.OrdinalIgnoreCase))
+    {
+        foreach (var refPath in ReadPathDirectives(path, "#:ref"))
+        {
+            deps.AddRange(ResolveIncludePath(path, NormalizeSeparators(refPath)));
+        }
+
+        foreach (var projectPath in ReadPathDirectives(path, "#:project"))
+        {
+            if (ResolveProjectPath(path, projectPath) is { } resolved)
+            {
+                deps.Add(resolved);
+            }
+        }
+    }
+    else if (path.EndsWith("proj", StringComparison.OrdinalIgnoreCase) && File.Exists(path))
+    {
+        try
+        {
+            var projectRefs = System.Xml.Linq.XDocument.Load(path).Descendants()
+                .Where(e => e.Name.LocalName == "ProjectReference")
+                .Select(e => e.Attribute("Include")?.Value)
+                .OfType<string>();
+
+            foreach (var projectRef in projectRefs)
+            {
+                if (ResolveProjectPath(path, projectRef) is { } resolved)
+                {
+                    deps.Add(resolved);
+                }
+            }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Xml.XmlException)
+        {
+            // If the project can't be read, treat it as having no project references.
+        }
+    }
+
+    return deps;
+}
+
+string? ResolveProjectPath(string referencingPath, string projectPath)
+{
+    var baseDirectory = Path.GetDirectoryName(referencingPath) ?? Environment.CurrentDirectory;
+    var fullPath = Path.GetFullPath(Path.Combine(baseDirectory, NormalizeSeparators(projectPath)));
+
+    if (Directory.Exists(fullPath))
+    {
+        var projectFiles = Directory.GetFiles(fullPath, "*.*proj");
+        return projectFiles.Length == 1 ? Path.GetFullPath(projectFiles[0]) : fullPath;
+    }
+
+    return File.Exists(fullPath) ? fullPath : null;
+}
+
+string NormalizeSeparators(string path) => path.Replace('\\', '/');
 
 async Task<VerificationResult> VerifyFile(string filePath, int timeoutSeconds)
 {
