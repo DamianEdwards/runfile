@@ -8,6 +8,11 @@ Requires [.NET SDK version 10.0.100](https://dotnet.microsoft.com/en-us/download
 
 Run all executable samples with `dotnet verify.cs --parallel --timeout 400`.
 
+Parallel verification serializes samples that share transitive file or project build
+dependencies. Dependency inspection failures stop verification rather than risk
+concurrent builds. Run `dotnet verify.cs -- --self-test` to exercise the dependency
+grouping regression tests; CI runs these tests on every platform before verifying samples.
+
 To diagnose one sample, use `dotnet verify.cs -- --file flat/apphost.cs --timeout 120 --verbose`.
 The `--` separates verifier arguments from .NET CLI options such as `--file`.
 The file path is relative to the current working directory and must be an executable

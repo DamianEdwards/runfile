@@ -12,12 +12,16 @@ using Spectre.Console;
 var useParallel = false;
 var verbose = false;
 var noCache = false;
+var selfTest = false;
 string? selectedFile = null;
 var timeoutSeconds = 10; // Default timeout
 for (int i = 0; i < args.Length; i++)
 {
     switch (args[i].ToLowerInvariant())
     {
+        case "--self-test":
+            selfTest = true;
+            break;
         case "--parallel":
             useParallel = true;
             break;
@@ -44,13 +48,20 @@ for (int i = 0; i < args.Length; i++)
             break;
         case "--help":
         case "-h":
-            AnsiConsole.WriteLine("Usage: dotnet verify.cs -- [--file <path>] [--parallel] [--timeout <seconds>] [--verbose] [--no-cache]");
+            AnsiConsole.WriteLine("Usage: dotnet verify.cs -- [--file <path>] [--parallel] [--timeout <seconds>] [--verbose] [--no-cache] [--self-test]");
             AnsiConsole.WriteLine("--file paths are relative to the current working directory.");
+            AnsiConsole.WriteLine("--self-test runs dependency grouping regression tests instead of verifying apps.");
             return 0;
         default:
             AnsiConsole.MarkupLine($"[red]Error: Unknown argument '{args[i].EscapeMarkup()}'. Use --help for usage.[/]");
             return 1;
     }
+}
+
+if (selfTest)
+{
+    RunGroupingTests();
+    return 0;
 }
 
 // Get the path of this script file
@@ -115,9 +126,18 @@ if (verbose)
 AnsiConsole.WriteLine();
 
 // Run verification
-var results = useParallel
-    ? await VerifyFilesParallel(csFiles, timeoutSeconds)
-    : await VerifyFilesSequential(csFiles, timeoutSeconds);
+List<VerificationResult> results;
+try
+{
+    results = useParallel
+        ? await VerifyFilesParallel(csFiles, timeoutSeconds)
+        : await VerifyFilesSequential(csFiles, timeoutSeconds);
+}
+catch (InvalidOperationException ex)
+{
+    AnsiConsole.MarkupLine($"[red]Verification failed: {ex.Message.EscapeMarkup()}[/]");
+    return 1;
+}
 
 // Display results in a table
 DisplayResults(results);
@@ -279,12 +299,20 @@ IEnumerable<string> ReadPathDirectives(string csFilePath, string directive)
             includePaths.Add(TrimIncludePath(includePath));
         }
     }
-    catch (IOException)
+    catch (IOException ex)
     {
+        if (directive != "#:include")
+        {
+            throw new InvalidOperationException($"Cannot read build dependencies from '{csFilePath}'.", ex);
+        }
         // If we can't read the file, treat it as having no include directives.
     }
-    catch (UnauthorizedAccessException)
+    catch (UnauthorizedAccessException ex)
     {
+        if (directive != "#:include")
+        {
+            throw new InvalidOperationException($"Cannot read build dependencies from '{csFilePath}'.", ex);
+        }
         // If we can't read the file, treat it as having no include directives.
     }
 
@@ -580,18 +608,20 @@ List<string> GetBuildDependencies(string path)
     {
         foreach (var refPath in ReadPathDirectives(path, "#:ref"))
         {
-            deps.AddRange(ResolveIncludePath(path, NormalizeSeparators(refPath)));
+            var resolved = ResolveIncludePath(path, NormalizeSeparators(refPath)).ToList();
+            if (resolved.Count == 0)
+            {
+                throw new InvalidOperationException($"Cannot resolve build dependency '{refPath}' from '{path}'.");
+            }
+            deps.AddRange(resolved);
         }
 
         foreach (var projectPath in ReadPathDirectives(path, "#:project"))
         {
-            if (ResolveProjectPath(path, projectPath) is { } resolved)
-            {
-                deps.Add(resolved);
-            }
+            deps.Add(ResolveProjectPath(path, projectPath));
         }
     }
-    else if (path.EndsWith("proj", StringComparison.OrdinalIgnoreCase) && File.Exists(path))
+    else if (path.EndsWith("proj", StringComparison.OrdinalIgnoreCase))
     {
         try
         {
@@ -602,22 +632,19 @@ List<string> GetBuildDependencies(string path)
 
             foreach (var projectRef in projectRefs)
             {
-                if (ResolveProjectPath(path, projectRef) is { } resolved)
-                {
-                    deps.Add(resolved);
-                }
+                deps.Add(ResolveProjectPath(path, projectRef));
             }
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Xml.XmlException)
         {
-            // If the project can't be read, treat it as having no project references.
+            throw new InvalidOperationException($"Cannot read build dependencies from project '{path}'.", ex);
         }
     }
 
     return deps;
 }
 
-string? ResolveProjectPath(string referencingPath, string projectPath)
+string ResolveProjectPath(string referencingPath, string projectPath)
 {
     var baseDirectory = Path.GetDirectoryName(referencingPath) ?? Environment.CurrentDirectory;
     var fullPath = Path.GetFullPath(Path.Combine(baseDirectory, NormalizeSeparators(projectPath)));
@@ -625,13 +652,121 @@ string? ResolveProjectPath(string referencingPath, string projectPath)
     if (Directory.Exists(fullPath))
     {
         var projectFiles = Directory.GetFiles(fullPath, "*.*proj");
-        return projectFiles.Length == 1 ? Path.GetFullPath(projectFiles[0]) : fullPath;
+        if (projectFiles.Length != 1)
+        {
+            throw new InvalidOperationException($"Cannot identify a single project in build dependency '{fullPath}'.");
+        }
+        return Path.GetFullPath(projectFiles[0]);
     }
 
-    return File.Exists(fullPath) ? fullPath : null;
+    return fullPath;
 }
 
 string NormalizeSeparators(string path) => path.Replace('\\', '/');
+
+void RunGroupingTests()
+{
+    var root = Path.Combine(Path.GetTempPath(), $"runfile-grouping-tests-{Guid.NewGuid():N}");
+    Directory.CreateDirectory(root);
+    try
+    {
+        string Write(string name, string content = "")
+        {
+            var path = Path.Combine(root, name);
+            File.WriteAllText(path, content);
+            return path;
+        }
+
+        void Check(string name, List<string> files, params string[][] expected)
+        {
+            var actual = GroupFilesByReferences(files)
+                .Select(group => string.Join(",", group.Select(Path.GetFileName)))
+                .Order(StringComparer.Ordinal).ToArray();
+            var wanted = expected.Select(group => string.Join(",", group))
+                .Order(StringComparer.Ordinal).ToArray();
+            if (!actual.SequenceEqual(wanted))
+            {
+                throw new InvalidOperationException($"{name}: expected [{string.Join("; ", wanted)}], got [{string.Join("; ", actual)}].");
+            }
+            AnsiConsole.WriteLine($"PASS: {name}");
+        }
+
+        void MustFail(string name, Action action)
+        {
+            try
+            {
+                action();
+            }
+            catch (InvalidOperationException)
+            {
+                AnsiConsole.WriteLine($"PASS: {name}");
+                return;
+            }
+            throw new InvalidOperationException($"{name}: dependency inspection unexpectedly succeeded.");
+        }
+
+        var dependency = Write("dependency.cs");
+        var direct = Write("direct.cs", "#:ref ./dependency.cs");
+        var independent = Write("independent.cs");
+        Check("direct reference, dependency first, independent file",
+            [direct, independent, dependency], ["dependency.cs", "direct.cs"], ["independent.cs"]);
+
+        var sibling = Write("sibling.cs", "#:ref ./dependency.cs");
+        Check("shared noncandidate file",
+            [direct, sibling, independent], ["direct.cs", "sibling.cs"], ["independent.cs"]);
+
+        var middle = Write("middle.cs", "#:ref ./dependency.cs");
+        var transitive = Write("transitive.cs", "#:ref ./middle.cs");
+        Check("transitive noncandidate file",
+            [transitive, sibling, independent], ["transitive.cs", "sibling.cs"], ["independent.cs"]);
+        Check("transitive selected files, dependency first",
+            [transitive, dependency, middle], ["dependency.cs", "middle.cs", "transitive.cs"]);
+
+        Write("base.csproj", "<Project />");
+        Write("library.csproj", "<Project><ItemGroup><ProjectReference Include=\"base.csproj\" /></ItemGroup></Project>");
+        var projectApp = Write("project.cs", "#:project ./library.csproj");
+        var sharedApp = Write("shared.cs", "#:project ./library.csproj");
+        var baseApp = Write("base.cs", "#:project ./base.csproj");
+        Check("shared noncandidate project",
+            [projectApp, sharedApp, independent], ["project.cs", "shared.cs"], ["independent.cs"]);
+        Check("transitive project dependency",
+            [projectApp, baseApp, independent], ["project.cs", "base.cs"], ["independent.cs"]);
+
+        var includes = Write("includes.cs", "#:include \"dependency.cs\" // comment\n#:include\tmiddle.cs");
+        if (!ReadIncludeDirectives(includes).SequenceEqual(["dependency.cs", "middle.cs"]))
+        {
+            throw new InvalidOperationException("Include directive parsing changed.");
+        }
+        AnsiConsole.WriteLine("PASS: include directive compatibility");
+
+        Write("broken.csproj", "<Project>");
+        var broken = Write("broken.cs", "#:project ./broken.csproj");
+        MustFail("malformed project XML fails scheduling", () => GroupFilesByReferences([broken, independent]));
+        MustFail("unreadable source fails scheduling",
+            () => GroupFilesByReferences([Path.Combine(root, "missing.cs"), independent]));
+        MustFail("unreadable project fails inspection",
+            () => GetBuildDependencies(Path.Combine(root, "missing.csproj")));
+        var missingRef = Write("missing-ref.cs", "#:ref ./missing.cs");
+        MustFail("missing referenced source fails scheduling",
+            () => GroupFilesByReferences([missingRef, independent]));
+        var missingProject = Write("missing-project.cs", "#:project ./missing.csproj");
+        MustFail("missing referenced project fails scheduling",
+            () => GroupFilesByReferences([missingProject, independent]));
+        using (var locked = new FileStream(dependency, FileMode.Open, FileAccess.ReadWrite, FileShare.None))
+        {
+            MustFail("locked source fails scheduling", () => GroupFilesByReferences([dependency, independent]));
+        }
+        using (var locked = new FileStream(Path.Combine(root, "library.csproj"), FileMode.Open, FileAccess.ReadWrite, FileShare.None))
+        {
+            MustFail("locked project fails scheduling", () => GroupFilesByReferences([projectApp, independent]));
+        }
+        AnsiConsole.WriteLine("All dependency grouping regression tests passed.");
+    }
+    finally
+    {
+        Directory.Delete(root, recursive: true);
+    }
+}
 
 async Task<VerificationResult> VerifyFile(string filePath, int timeoutSeconds)
 {

@@ -134,6 +134,10 @@ jobs:
           fi
         shell: bash
       
+      - name: Test verification dependency grouping
+        run: dotnet verify.cs -- --self-test
+        working-directory: ${{ github.workspace }}
+
       - name: Run verification script
         run: dotnet verify.cs --parallel --timeout 400
         working-directory: ${{ github.workspace }}
