@@ -253,7 +253,9 @@ IEnumerable<string> EnumerateCandidateCsFiles(string rootDir)
     }
 }
 
-IEnumerable<string> ReadIncludeDirectives(string csFilePath)
+IEnumerable<string> ReadIncludeDirectives(string csFilePath) => ReadPathDirectives(csFilePath, "#:include");
+
+IEnumerable<string> ReadPathDirectives(string csFilePath, string directive)
 {
     var includePaths = new List<string>();
 
@@ -262,14 +264,14 @@ IEnumerable<string> ReadIncludeDirectives(string csFilePath)
         foreach (var line in File.ReadLines(csFilePath))
         {
             var trimmed = line.Trim();
-            const string includeDirective = "#:include";
 
-            if (!trimmed.StartsWith(includeDirective, StringComparison.OrdinalIgnoreCase))
+            if (!trimmed.StartsWith(directive + " ", StringComparison.OrdinalIgnoreCase)
+                && !trimmed.StartsWith(directive + "\t", StringComparison.OrdinalIgnoreCase))
             {
                 continue;
             }
 
-            var includePath = trimmed[includeDirective.Length..].Trim();
+            var includePath = trimmed[directive.Length..].Trim();
             if (includePath.Length == 0)
             {
                 continue;
@@ -466,14 +468,19 @@ async Task<List<VerificationResult>> VerifyFilesParallel(List<string> files, int
         {
             var progressTask = ctx.AddTask($"[green]Verifying files (0/{files.Count})[/]", maxValue: files.Count);
 
-            var tasks = files.Select(async file =>
+            // Files linked via #:ref share build outputs (building a referencing app also builds the
+            // referenced app into its artifacts directory), so each linked group runs sequentially.
+            var tasks = GroupFilesByReferences(files).Select(async group =>
             {
-                var result = await VerifyFile(file, timeoutSeconds);
-                lock (lockObj)
+                foreach (var file in group)
                 {
-                    results.Add(result);
-                    progressTask.Increment(1);
-                    progressTask.Description = $"[green]Verifying files ({results.Count}/{files.Count})[/]";
+                    var result = await VerifyFile(file, timeoutSeconds);
+                    lock (lockObj)
+                    {
+                        results.Add(result);
+                        progressTask.Increment(1);
+                        progressTask.Description = $"[green]Verifying files ({results.Count}/{files.Count})[/]";
+                    }
                 }
             });
 
@@ -481,6 +488,62 @@ async Task<List<VerificationResult>> VerifyFilesParallel(List<string> files, int
         });
 
     return results;
+}
+
+List<List<string>> GroupFilesByReferences(List<string> files)
+{
+    var comparer = StringComparer.OrdinalIgnoreCase;
+    var fileSet = new HashSet<string>(files, comparer);
+    var references = new Dictionary<string, List<string>>(comparer);
+    var parent = files.ToDictionary(f => f, f => f, comparer);
+
+    string Find(string f) => comparer.Equals(parent[f], f) ? f : parent[f] = Find(parent[f]);
+
+    foreach (var file in files)
+    {
+        var refs = ReadPathDirectives(file, "#:ref")
+            .SelectMany(refPath => ResolveIncludePath(file, refPath))
+            .Where(fileSet.Contains)
+            .ToList();
+        references[file] = refs;
+
+        foreach (var referenced in refs)
+        {
+            parent[Find(file)] = Find(referenced);
+        }
+    }
+
+    var groups = new Dictionary<string, List<string>>(comparer);
+    var visited = new HashSet<string>(comparer);
+
+    void Visit(string file, List<string> ordered)
+    {
+        if (!visited.Add(file))
+        {
+            return;
+        }
+
+        foreach (var referenced in references[file])
+        {
+            Visit(referenced, ordered);
+        }
+
+        ordered.Add(file);
+    }
+
+    foreach (var file in files)
+    {
+        var root = Find(file);
+        if (!groups.TryGetValue(root, out var ordered))
+        {
+            groups[root] = ordered = [];
+        }
+
+        // Referenced files are verified before the files that reference them.
+        Visit(file, ordered);
+    }
+
+    return groups.Values.ToList();
 }
 
 async Task<VerificationResult> VerifyFile(string filePath, int timeoutSeconds)
