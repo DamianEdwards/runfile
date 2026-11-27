@@ -1,27 +1,24 @@
 name: CI
 
 on:
-  push:
-    branches:
-      - main
-  pull_request:
-    branches:
-      - main
   workflow_dispatch:
+    inputs:
+      mt:
+        description: Enable multithreaded MSBuild
+        required: true
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
 
 jobs:
   build-and-verify:
-    permissions:
-      contents: write
-      pull-requests: write
-    
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
-    
     runs-on: ${{ matrix.os }}
-    
     env:
       DOTNET_CLI_TELEMETRY_OPTOUT: 1
       DOTNET_SKIP_FIRST_TIME_EXPERIENCE: 1
@@ -30,114 +27,34 @@ jobs:
       DOTNET_ADD_GLOBAL_TOOLS_TO_PATH: false
       DOTNET_MULTILEVEL_LOOKUP: 0
       DOTNET_SYSTEM_CONSOLE_ALLOW_ANSI_COLOR_REDIRECTION: true
-    
+      RUNFILE_EXPERIMENT_MT: ${{ inputs.mt }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           fetch-depth: 0
-          token: ${{ secrets.GITHUB_TOKEN }}
-      
-      - name: Check for nativelib changes
-        id: check-nativelib
-        run: |
-          NEED_BUILD=false
-          
-          # Check if nativelib source files changed
-          if [ "${{ github.event_name }}" == "pull_request" ]; then
-            if git diff --name-only ${{ github.event.pull_request.base.sha }} ${{ github.sha }} | grep -q '^nativelib/'; then
-              NEED_BUILD=true
-            fi
-          else
-            if git diff --name-only HEAD~1 HEAD | grep -q '^nativelib/'; then
-              NEED_BUILD=true
-            fi
-          fi
-          
-          # Check if output files are missing
-          if [ "${{ runner.os }}" == "Windows" ] && [ ! -f "flat/lib/greetings.dll" ]; then
-            NEED_BUILD=true
-          fi
-          if [ "${{ runner.os }}" == "Linux" ] && [ ! -f "flat/lib/libgreetings.so" ]; then
-            NEED_BUILD=true
-          fi
-          if [ "${{ runner.os }}" == "macOS" ] && [ ! -f "flat/lib/libgreetings.dylib" ]; then
-            NEED_BUILD=true
-          fi
-          
-          if [ "$NEED_BUILD" == "true" ]; then
-            echo "changed=true" >> $GITHUB_OUTPUT
-          else
-            echo "changed=false" >> $GITHUB_OUTPUT
-          fi
-        shell: bash
-      
       - name: Setup .NET SDK
-        uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4
+        uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9
         with:
           dotnet-version: 11.0.100
-      
+      - name: SDK and runner
+        run: dotnet --info
       - name: Install HTTPS development certificate
         run: dotnet dev-certs https --verbose
         continue-on-error: true
-
-      - name: Install CMake (Ubuntu)
-        if: steps.check-nativelib.outputs.changed == 'true' && runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y cmake build-essential
-      
-      - name: Install CMake (macOS)
-        if: steps.check-nativelib.outputs.changed == 'true' && runner.os == 'macOS'
-        run: |
-          brew install cmake
-      
-      - name: Install CMake (Windows)
-        if: steps.check-nativelib.outputs.changed == 'true' && runner.os == 'Windows'
-        run: |
-          choco install cmake --installargs 'ADD_CMAKE_TO_PATH=System' -y
-      
-      - name: Build nativelib
-        if: steps.check-nativelib.outputs.changed == 'true'
-        run: |
-          cmake -S nativelib -B nativelib/build -DCMAKE_BUILD_TYPE=Release
-          cmake --build nativelib/build --config Release
-      
-      - name: Copy nativelib output to flat/lib (Windows)
-        if: steps.check-nativelib.outputs.changed == 'true' && runner.os == 'Windows'
-        run: |
-          mkdir -p flat/lib
-          cp nativelib/build/Release/greetings.dll flat/lib/
-        shell: bash
-      
-      - name: Copy nativelib output to flat/lib (Linux)
-        if: steps.check-nativelib.outputs.changed == 'true' && runner.os == 'Linux'
-        run: |
-          mkdir -p flat/lib
-          cp nativelib/build/libgreetings.so flat/lib/
-      
-      - name: Copy nativelib output to flat/lib (macOS)
-        if: steps.check-nativelib.outputs.changed == 'true' && runner.os == 'macOS'
-        run: |
-          mkdir -p flat/lib
-          cp nativelib/build/libgreetings.dylib flat/lib/
-      
-      - name: Commit and push nativelib artifacts
-        if: steps.check-nativelib.outputs.changed == 'true' && github.event_name == 'pull_request'
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add flat/lib/
-          if ! git diff --staged --quiet; then
-            git commit -m "Update nativelib artifacts for ${{ runner.os }}"
-            git push origin HEAD:${{ github.head_ref }}
-          fi
-        shell: bash
-      
       - name: Test verification dependency grouping
-        run: dotnet verify.cs -- --self-test
-        working-directory: ${{ github.workspace }}
-
+        shell: bash
+        run: |
+          if [ "$RUNFILE_EXPERIMENT_MT" = true ]; then
+            dotnet verify.cs -mt -- --self-test
+          else
+            dotnet verify.cs -- --self-test
+          fi
       - name: Run verification script
-        run: dotnet verify.cs --parallel --timeout 400
-        working-directory: ${{ github.workspace }}
+        shell: bash
+        run: |
+          if [ "$RUNFILE_EXPERIMENT_MT" = true ]; then
+            dotnet verify.cs -mt --parallel --timeout 400
+          else
+            dotnet verify.cs --parallel --timeout 400
+          fi

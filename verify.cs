@@ -813,6 +813,10 @@ async Task<VerificationResult> VerifyFile(string filePath, int timeoutSeconds)
 
     // Add arguments using ArgumentList to avoid escaping issues
     startInfo.ArgumentList.Add(filePath);
+    if (Environment.GetEnvironmentVariable("RUNFILE_EXPERIMENT_MT") == "true")
+    {
+        startInfo.ArgumentList.Add("-mt");
+    }
     if (noCache)
     {
         startInfo.ArgumentList.Add("--no-cache");
